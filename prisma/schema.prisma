@@ -1,9 +1,3 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
-// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
-// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
-
 generator client {
   provider = "prisma-client-js"
   output   = "../generated/prisma"
@@ -15,22 +9,23 @@ datasource db {
 }
 
 model Category {
-  id            Int    @id @default(autoincrement())
-  name          String
-  restaurantId  String // New field for restaurant ID
+  id           Int    @id @default(autoincrement())
+  name         String
+  restaurantId String
+  iconName     String?
 
-  @@unique([name, restaurantId]) // Categories must be unique per restaurant
+  @@unique([name, restaurantId])
 }
 
 model Otp {
   id        String   @id @default(uuid())
   otpCode   String
-  clientId  String
-  tableId   String?  // Optional for table-based OTPs
-  mobileNum String?  // Optional for SMS-based OTPs
   createdAt DateTime @default(now())
   expiresAt DateTime
   verified  Boolean  @default(false)
+  clientId  String
+  tableId   String?
+  mobileNum String?
 
   @@index([id])
   @@index([clientId])
@@ -41,8 +36,8 @@ model Otp {
 model OtpAttempt {
   id        String   @id @default(uuid())
   clientId  String
-  ipAddress String?
   createdAt DateTime @default(now())
+  ipAddress String?
 
   @@index([clientId])
 }

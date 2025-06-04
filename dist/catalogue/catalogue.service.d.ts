@@ -7,4 +7,8 @@ export declare class CatalogueService {
         categories: string[];
     }>;
     addCategory(categoryName: string, restaurantId: string): Promise<Category>;
+    addCategoryIcon(restaurantId: string, categoryName: string, iconName: string): Promise<Category>;
+    getCategoryIcons(restaurantId: string): Promise<{
+        [categoryName: string]: string | null;
+    }>;
 }

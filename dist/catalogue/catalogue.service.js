@@ -56,6 +56,61 @@ let CatalogueService = class CatalogueService {
             throw new common_1.InternalServerErrorException('Could not add category.');
         }
     }
+    async addCategoryIcon(restaurantId, categoryName, iconName) {
+        try {
+            const category = await this.prisma.category.findUnique({
+                where: {
+                    name_restaurantId: {
+                        name: categoryName,
+                        restaurantId: restaurantId,
+                    },
+                },
+            });
+            if (!category) {
+                throw new common_1.NotFoundException(`Category '${categoryName}' not found for restaurant ID '${restaurantId}'.`);
+            }
+            const updatedCategory = await this.prisma.category.update({
+                where: {
+                    id: category.id,
+                },
+                data: {
+                    iconName: iconName,
+                },
+            });
+            return updatedCategory;
+        }
+        catch (error) {
+            if (error instanceof common_1.NotFoundException) {
+                throw error;
+            }
+            console.error(`Error adding icon '${iconName}' to category '${categoryName}' for restaurant ${restaurantId}:`, error);
+            throw new common_1.InternalServerErrorException('Could not add category icon.');
+        }
+    }
+    async getCategoryIcons(restaurantId) {
+        if (!restaurantId) {
+            throw new common_1.InternalServerErrorException('Restaurant ID is required to fetch category icons.');
+        }
+        try {
+            const categories = await this.prisma.category.findMany({
+                where: {
+                    restaurantId: restaurantId,
+                },
+                orderBy: {
+                    name: 'asc',
+                },
+            });
+            const categoryIcons = {};
+            for (const cat of categories) {
+                categoryIcons[cat.name] = cat.iconName;
+            }
+            return categoryIcons;
+        }
+        catch (error) {
+            console.error(`Error fetching category icons for restaurant ${restaurantId}:`, error);
+            throw new common_1.InternalServerErrorException('Could not fetch category icons.');
+        }
+    }
 };
 exports.CatalogueService = CatalogueService;
 exports.CatalogueService = CatalogueService = __decorate([
