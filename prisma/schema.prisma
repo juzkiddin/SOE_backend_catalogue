@@ -9,12 +9,53 @@ datasource db {
 }
 
 model Category {
-  id           Int    @id @default(autoincrement())
+  id           Int     @id @default(autoincrement())
   name         String
   restaurantId String
   iconName     String?
+  items        Item[]  // Relation to Item model
 
   @@unique([name, restaurantId])
+}
+
+model Item {
+  id            Int      @id @default(autoincrement())
+  name          String
+  description   String?
+  price         Float?   // Optional here, will be validated in DTO based on portionAvail
+  imageUrl      String?
+  availStatus   Boolean  @default(true)
+  portionAvail  Boolean  @default(false)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  categoryId    Int
+  category      Category @relation(fields: [categoryId], references: [id])
+
+  restaurantId  String   // To easily query items by restaurant without going through category
+
+  portions      Portion[] // Relation to Portion model
+
+  @@unique([name, categoryId]) // Item names unique within a category
+  @@index([restaurantId])
+  @@index([categoryId])
+}
+
+model Portion {
+  id        Int      @id @default(autoincrement())
+  name      String   // e.g., "Small", "Large", "Regular"
+  price     Float
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  itemId    Int
+  item      Item     @relation(fields: [itemId], references: [id], onDelete: Cascade)
+
+  // restaurantId could be added for direct querying if needed, but can be inferred via Item
+  // For simplicity, let's require restaurantId in DTOs and validate against item's restaurantId
+
+  @@unique([name, itemId]) // Portion names unique for an item
+  @@index([itemId])
 }
 
 model Otp {

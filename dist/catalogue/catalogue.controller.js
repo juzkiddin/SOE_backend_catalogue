@@ -19,6 +19,10 @@ const create_category_dto_1 = require("./dto/create-category.dto");
 const get_categories_dto_1 = require("./dto/get-categories.dto");
 const add_category_icon_dto_1 = require("./dto/add-category-icon.dto");
 const get_category_icons_dto_1 = require("./dto/get-category-icons.dto");
+const add_category_item_dto_1 = require("./dto/add-category-item.dto");
+const edit_portion_dto_1 = require("./dto/edit-portion.dto");
+const edit_item_attribute_dto_1 = require("./dto/edit-item-attribute.dto");
+const get_category_items_dto_1 = require("./dto/get-category-items.dto");
 let CatalogueController = class CatalogueController {
     catalogueService;
     constructor(catalogueService) {
@@ -35,6 +39,18 @@ let CatalogueController = class CatalogueController {
     }
     async getCategoryIcons(getCategoryIconsDto) {
         return this.catalogueService.getCategoryIcons(getCategoryIconsDto.restaurantId);
+    }
+    async addCategoryItem(dto) {
+        return this.catalogueService.addCategoryItem(dto.restaurantId, dto.categoryName, dto.itemName, dto.description, dto.price, dto.imageUrl, dto.availStatus, dto.portionAvail);
+    }
+    async editPortion(dto) {
+        return this.catalogueService.editPortion(dto.restaurantId, dto.itemId, dto.portionName, dto.portionPrice);
+    }
+    async editItemAttribute(dto) {
+        return this.catalogueService.editItemAttribute(dto.restaurantId, dto.itemId, dto.attributeName, dto.attributeValue);
+    }
+    async getCategoryItems(dto) {
+        return this.catalogueService.getCategoryItems(dto.restaurantId, dto.categoryName);
     }
 };
 exports.CatalogueController = CatalogueController;
@@ -70,8 +86,40 @@ __decorate([
     __metadata("design:paramtypes", [get_category_icons_dto_1.GetCategoryIconsDto]),
     __metadata("design:returntype", Promise)
 ], CatalogueController.prototype, "getCategoryIcons", null);
+__decorate([
+    (0, common_1.Post)('addcategoryitem'),
+    (0, common_1.UsePipes)(new common_1.ValidationPipe({ transform: true, whitelist: true, forbidNonWhitelisted: true })),
+    __param(0, (0, common_1.Body)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [add_category_item_dto_1.AddCategoryItemDto]),
+    __metadata("design:returntype", Promise)
+], CatalogueController.prototype, "addCategoryItem", null);
+__decorate([
+    (0, common_1.Post)('editportion'),
+    (0, common_1.UsePipes)(new common_1.ValidationPipe({ transform: true, whitelist: true, forbidNonWhitelisted: true })),
+    __param(0, (0, common_1.Body)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [edit_portion_dto_1.EditPortionDto]),
+    __metadata("design:returntype", Promise)
+], CatalogueController.prototype, "editPortion", null);
+__decorate([
+    (0, common_1.Post)('edititemattribute'),
+    (0, common_1.UsePipes)(new common_1.ValidationPipe({ transform: true, whitelist: true, forbidNonWhitelisted: true })),
+    __param(0, (0, common_1.Body)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [edit_item_attribute_dto_1.EditItemAttributeDto]),
+    __metadata("design:returntype", Promise)
+], CatalogueController.prototype, "editItemAttribute", null);
+__decorate([
+    (0, common_1.Post)('categoryitems'),
+    (0, common_1.UsePipes)(new common_1.ValidationPipe({ transform: true, whitelist: true, forbidNonWhitelisted: true })),
+    __param(0, (0, common_1.Body)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [get_category_items_dto_1.GetCategoryItemsDto]),
+    __metadata("design:returntype", Promise)
+], CatalogueController.prototype, "getCategoryItems", null);
 exports.CatalogueController = CatalogueController = __decorate([
-    (0, common_1.Controller)('catalouge'),
+    (0, common_1.Controller)('catalogue'),
     __metadata("design:paramtypes", [catalogue_service_1.CatalogueService])
 ], CatalogueController);
 //# sourceMappingURL=catalogue.controller.js.map
