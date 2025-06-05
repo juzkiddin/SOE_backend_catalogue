@@ -74,6 +74,28 @@ model Otp {
   @@index([mobileNum])
 }
 
+enum PaymentStatus {
+  Pending
+  Confirmed
+  Failed
+  Expired
+  NotCompleted
+}
+
+model Session {
+  sessionId      String        @id @default(uuid())
+  billId         String        @unique
+  restaurantId   String
+  customerNumber String
+  paymentStatus  PaymentStatus @default(Pending)
+  tableId        String
+  sessionStart   DateTime      @default(now())
+  sessionEnd     DateTime?
+  sessionStatus  String        @default("Active")
+
+  @@index([restaurantId, tableId, customerNumber, paymentStatus, sessionStatus])
+}
+
 model OtpAttempt {
   id        String   @id @default(uuid())
   clientId  String
