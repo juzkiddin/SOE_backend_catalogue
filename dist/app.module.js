@@ -10,14 +10,32 @@ exports.AppModule = void 0;
 const common_1 = require("@nestjs/common");
 const catalogue_module_1 = require("./catalogue/catalogue.module");
 const session_module_1 = require("./session/session.module");
+const config_1 = require("@nestjs/config");
+const nestjs_throttler_1 = require("nestjs-throttler");
+const core_1 = require("@nestjs/core");
 let AppModule = class AppModule {
 };
 exports.AppModule = AppModule;
 exports.AppModule = AppModule = __decorate([
     (0, common_1.Module)({
-        imports: [catalogue_module_1.CatalogueModule, session_module_1.SessionModule],
+        imports: [
+            config_1.ConfigModule.forRoot({
+                isGlobal: true,
+            }),
+            nestjs_throttler_1.ThrottlerModule.forRoot({
+                ttl: 60000,
+                limit: 100,
+            }),
+            catalogue_module_1.CatalogueModule,
+            session_module_1.SessionModule
+        ],
         controllers: [],
-        providers: [],
+        providers: [
+            {
+                provide: core_1.APP_GUARD,
+                useClass: nestjs_throttler_1.ThrottlerGuard,
+            },
+        ],
     })
 ], AppModule);
 //# sourceMappingURL=app.module.js.map

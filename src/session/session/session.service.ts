@@ -2,6 +2,7 @@ import { Injectable, NotFoundException, BadRequestException, Logger, InternalSer
 import { PrismaService } from '../../prisma.service';
 import { CreateSessionDto, PaymentConfirmDto } from '../dto';
 import { PaymentStatus, Session } from '../../../generated/prisma';
+import { ConfigService } from '@nestjs/config';
 
 // Helper function for retry delay
 const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
@@ -9,11 +10,23 @@ const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 @Injectable()
 export class SessionService {
     private readonly logger = new Logger(SessionService.name);
-    private readonly MAX_BILL_ID_RETRIES = 3;
-    private readonly BILL_ID_RETRY_DELAY_MS = 50;
-    private readonly SESSION_EXPIRY_HOURS = 8;
 
-    constructor(private readonly prisma: PrismaService) { }
+    constructor(
+        private readonly prisma: PrismaService,
+        private readonly configService: ConfigService,
+    ) { }
+
+    private get maxBillIdRetries(): number {
+        return this.configService.get<number>('MAX_BILL_ID_RETRIES', 3);
+    }
+
+    private get billIdRetryDelayMs(): number {
+        return this.configService.get<number>('BILL_ID_RETRY_DELAY_MS', 50);
+    }
+
+    private get sessionExpiryHours(): number {
+        return this.configService.get<number>('SESSION_EXPIRY_HOURS', 8);
+    }
 
     private async generateBillId(): Promise<string> {
         // Get current UTC time
@@ -69,13 +82,15 @@ export class SessionService {
             }
         });
 
+        const sessionExpiryHoursVal = this.sessionExpiryHours;
+
         if (latestSession) {
             this.logger.log(`Found latest session: ${latestSession.sessionId} (status: ${latestSession.sessionStatus}, payment: ${latestSession.paymentStatus}) started at ${latestSession.sessionStart}`);
             const sessionAgeHours = (Date.now() - new Date(latestSession.sessionStart).getTime()) / (1000 * 60 * 60);
             this.logger.log(`Calculated session age: ${sessionAgeHours.toFixed(2)} hours. Current server time (for Date.now()): ${new Date().toISOString()}`);
 
             if (latestSession.paymentStatus === PaymentStatus.Pending && latestSession.sessionStatus !== 'Expired') {
-                if (sessionAgeHours >= 0 && sessionAgeHours <= this.SESSION_EXPIRY_HOURS) {
+                if (sessionAgeHours >= 0 && sessionAgeHours <= sessionExpiryHoursVal) {
                     this.logger.log('Latest pending session is active. Returning its details.');
                     return {
                         sessionId: latestSession.sessionId,
@@ -83,7 +98,7 @@ export class SessionService {
                         paymentStatus: latestSession.paymentStatus,
                     };
                 } else {
-                    this.logger.log('Latest pending session is too old or from the future. Marking as Expired and NotCompleted.');
+                    this.logger.log(`OLD_PENDING_SESSION: Marking ${latestSession.sessionId} as Expired/NotCompleted due to age/future date (age ${sessionAgeHours.toFixed(2)}h vs ${sessionExpiryHoursVal}h limit).`);
                     await this.prisma.session.update({
                         where: { sessionId: latestSession.sessionId },
                         data: {
@@ -92,6 +107,7 @@ export class SessionService {
                             sessionEnd: new Date(),
                         },
                     });
+                    this.logger.log(`OLD_PENDING_SESSION: Updated ${latestSession.sessionId}. WILL NOW RETURN {sessionStatus: 'Expired'}`);
                     return { sessionStatus: 'Expired' };
                 }
             }
@@ -100,16 +116,24 @@ export class SessionService {
                 latestSession.paymentStatus === PaymentStatus.Confirmed ||
                 latestSession.paymentStatus === PaymentStatus.Failed ||
                 latestSession.paymentStatus === PaymentStatus.NotCompleted) {
-                this.logger.log('Latest session is already in a terminal state (Expired/Confirmed/Failed/NotCompleted). Proceeding to create a new session.');
+                this.logger.log(`Latest session (${latestSession.sessionId}) is already in a terminal state (Status: ${latestSession.sessionStatus}, Payment: ${latestSession.paymentStatus}). Will proceed to create a new session if no other path returns.`);
+            } else {
+                // This case implies the session exists but wasn't Pending & Active (for reuse) and wasn't already terminal. 
+                // For example, payment might be Pending but sessionStatus was already 'Expired' (handled by first 'if' not triggering).
+                // Or some other combination not leading to reuse. In such cases, we'd typically create a new session.
+                this.logger.log(`An existing session ${latestSession.sessionId} was found but didn't match reuse criteria and wasn't definitively terminal for new creation (Status: ${latestSession.sessionStatus}, Payment: ${latestSession.paymentStatus}). Defaulting to new session creation.`);
             }
 
         } else {
-            this.logger.log('No previous session found. Proceeding to create a new session.');
+            this.logger.log('NO_PRIOR_SESSION_FOUND: Proceeding to new session creation.');
         }
 
-        this.logger.log('Creating a new session.');
+        this.logger.log('NEW_SESSION_CREATION_BLOCK_ENTERED');
         let retries = 0;
-        while (retries < this.MAX_BILL_ID_RETRIES) {
+        const maxRetries = this.maxBillIdRetries;
+        const retryDelay = this.billIdRetryDelayMs;
+
+        while (retries < maxRetries) {
             try {
                 const billId = await this.generateBillId();
                 this.logger.log(`Generated billId: ${billId} (Attempt ${retries + 1})`);
@@ -131,12 +155,12 @@ export class SessionService {
             } catch (error) {
                 if (error.code === 'P2002' && error.meta?.target?.includes('billId')) {
                     retries++;
-                    this.logger.warn(`BillId unique constraint violation for billId. Retry attempt ${retries}/${this.MAX_BILL_ID_RETRIES}.`);
-                    if (retries < this.MAX_BILL_ID_RETRIES) {
-                        await delay(this.BILL_ID_RETRY_DELAY_MS);
+                    this.logger.warn(`BillId unique constraint violation for billId. Retry attempt ${retries}/${maxRetries}.`);
+                    if (retries < maxRetries) {
+                        await delay(retryDelay);
                         continue;
                     } else {
-                        this.logger.error(`Failed to generate unique Bill ID after ${this.MAX_BILL_ID_RETRIES} retries.`);
+                        this.logger.error(`Failed to generate unique Bill ID after ${maxRetries} retries.`);
                         throw new InternalServerErrorException('Failed to generate unique Bill ID. Please try again later.');
                     }
                 }
@@ -152,14 +176,14 @@ export class SessionService {
     }
 
     async paymentConfirm(paymentConfirmDto: PaymentConfirmDto): Promise<{ sessionId: string; billId: string; paymentStatus: PaymentStatus }> {
-        const expectedPaymentKey = process.env.PAYMENT_CONF_KEY;
+        const expectedPaymentKey = this.configService.get<string>('PAYMENT_CONF_KEY');
         if (!expectedPaymentKey) {
             this.logger.error('PAYMENT_CONF_KEY is not set in environment variables.');
             throw new InternalServerErrorException('Payment confirmation system configuration error.');
         }
 
         if (paymentConfirmDto.signedPaymentKey !== expectedPaymentKey) {
-            this.logger.warn(`Invalid signedPaymentKey received. Expected: ${expectedPaymentKey}, Received: ${paymentConfirmDto.signedPaymentKey}`);
+            this.logger.warn(`Invalid signedPaymentKey received. Expected key (length): ${expectedPaymentKey.length}, Received key (length): ${paymentConfirmDto.signedPaymentKey.length}`);
             throw new UnauthorizedException('Invalid payment confirmation key.');
         }
 
@@ -202,9 +226,8 @@ export class SessionService {
         } catch (error) {
             this.logger.error(`Failed to confirm payment: ${error.message}`, error.stack);
             if (error instanceof NotFoundException || error instanceof BadRequestException || error instanceof UnauthorizedException) {
-                throw error; // Re-throw specific known errors
+                throw error;
             }
-            // For other errors, wrap them in a generic exception or handle as appropriate
             throw new InternalServerErrorException('Could not confirm payment due to an unexpected error.');
         }
     }

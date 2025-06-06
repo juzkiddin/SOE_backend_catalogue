@@ -14,15 +14,24 @@ exports.SessionService = void 0;
 const common_1 = require("@nestjs/common");
 const prisma_service_1 = require("../../prisma.service");
 const prisma_1 = require("../../../generated/prisma");
+const config_1 = require("@nestjs/config");
 const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 let SessionService = SessionService_1 = class SessionService {
     prisma;
+    configService;
     logger = new common_1.Logger(SessionService_1.name);
-    MAX_BILL_ID_RETRIES = 3;
-    BILL_ID_RETRY_DELAY_MS = 50;
-    SESSION_EXPIRY_HOURS = 8;
-    constructor(prisma) {
+    constructor(prisma, configService) {
         this.prisma = prisma;
+        this.configService = configService;
+    }
+    get maxBillIdRetries() {
+        return this.configService.get('MAX_BILL_ID_RETRIES', 3);
+    }
+    get billIdRetryDelayMs() {
+        return this.configService.get('BILL_ID_RETRY_DELAY_MS', 50);
+    }
+    get sessionExpiryHours() {
+        return this.configService.get('SESSION_EXPIRY_HOURS', 8);
     }
     async generateBillId() {
         const nowUtc = new Date();
@@ -67,12 +76,13 @@ let SessionService = SessionService_1 = class SessionService {
                 sessionStart: true,
             }
         });
+        const sessionExpiryHoursVal = this.sessionExpiryHours;
         if (latestSession) {
             this.logger.log(`Found latest session: ${latestSession.sessionId} (status: ${latestSession.sessionStatus}, payment: ${latestSession.paymentStatus}) started at ${latestSession.sessionStart}`);
             const sessionAgeHours = (Date.now() - new Date(latestSession.sessionStart).getTime()) / (1000 * 60 * 60);
             this.logger.log(`Calculated session age: ${sessionAgeHours.toFixed(2)} hours. Current server time (for Date.now()): ${new Date().toISOString()}`);
             if (latestSession.paymentStatus === prisma_1.PaymentStatus.Pending && latestSession.sessionStatus !== 'Expired') {
-                if (sessionAgeHours >= 0 && sessionAgeHours <= this.SESSION_EXPIRY_HOURS) {
+                if (sessionAgeHours >= 0 && sessionAgeHours <= sessionExpiryHoursVal) {
                     this.logger.log('Latest pending session is active. Returning its details.');
                     return {
                         sessionId: latestSession.sessionId,
@@ -81,7 +91,7 @@ let SessionService = SessionService_1 = class SessionService {
                     };
                 }
                 else {
-                    this.logger.log('Latest pending session is too old or from the future. Marking as Expired and NotCompleted.');
+                    this.logger.log(`OLD_PENDING_SESSION: Marking ${latestSession.sessionId} as Expired/NotCompleted due to age/future date (age ${sessionAgeHours.toFixed(2)}h vs ${sessionExpiryHoursVal}h limit).`);
                     await this.prisma.session.update({
                         where: { sessionId: latestSession.sessionId },
                         data: {
@@ -90,6 +100,7 @@ let SessionService = SessionService_1 = class SessionService {
                             sessionEnd: new Date(),
                         },
                     });
+                    this.logger.log(`OLD_PENDING_SESSION: Updated ${latestSession.sessionId}. WILL NOW RETURN {sessionStatus: 'Expired'}`);
                     return { sessionStatus: 'Expired' };
                 }
             }
@@ -97,15 +108,20 @@ let SessionService = SessionService_1 = class SessionService {
                 latestSession.paymentStatus === prisma_1.PaymentStatus.Confirmed ||
                 latestSession.paymentStatus === prisma_1.PaymentStatus.Failed ||
                 latestSession.paymentStatus === prisma_1.PaymentStatus.NotCompleted) {
-                this.logger.log('Latest session is already in a terminal state (Expired/Confirmed/Failed/NotCompleted). Proceeding to create a new session.');
+                this.logger.log(`Latest session (${latestSession.sessionId}) is already in a terminal state (Status: ${latestSession.sessionStatus}, Payment: ${latestSession.paymentStatus}). Will proceed to create a new session if no other path returns.`);
+            }
+            else {
+                this.logger.log(`An existing session ${latestSession.sessionId} was found but didn't match reuse criteria and wasn't definitively terminal for new creation (Status: ${latestSession.sessionStatus}, Payment: ${latestSession.paymentStatus}). Defaulting to new session creation.`);
             }
         }
         else {
-            this.logger.log('No previous session found. Proceeding to create a new session.');
+            this.logger.log('NO_PRIOR_SESSION_FOUND: Proceeding to new session creation.');
         }
-        this.logger.log('Creating a new session.');
+        this.logger.log('NEW_SESSION_CREATION_BLOCK_ENTERED');
         let retries = 0;
-        while (retries < this.MAX_BILL_ID_RETRIES) {
+        const maxRetries = this.maxBillIdRetries;
+        const retryDelay = this.billIdRetryDelayMs;
+        while (retries < maxRetries) {
             try {
                 const billId = await this.generateBillId();
                 this.logger.log(`Generated billId: ${billId} (Attempt ${retries + 1})`);
@@ -127,13 +143,13 @@ let SessionService = SessionService_1 = class SessionService {
             catch (error) {
                 if (error.code === 'P2002' && error.meta?.target?.includes('billId')) {
                     retries++;
-                    this.logger.warn(`BillId unique constraint violation for billId. Retry attempt ${retries}/${this.MAX_BILL_ID_RETRIES}.`);
-                    if (retries < this.MAX_BILL_ID_RETRIES) {
-                        await delay(this.BILL_ID_RETRY_DELAY_MS);
+                    this.logger.warn(`BillId unique constraint violation for billId. Retry attempt ${retries}/${maxRetries}.`);
+                    if (retries < maxRetries) {
+                        await delay(retryDelay);
                         continue;
                     }
                     else {
-                        this.logger.error(`Failed to generate unique Bill ID after ${this.MAX_BILL_ID_RETRIES} retries.`);
+                        this.logger.error(`Failed to generate unique Bill ID after ${maxRetries} retries.`);
                         throw new common_1.InternalServerErrorException('Failed to generate unique Bill ID. Please try again later.');
                     }
                 }
@@ -148,13 +164,13 @@ let SessionService = SessionService_1 = class SessionService {
         throw new common_1.InternalServerErrorException('Could not create session after multiple attempts.');
     }
     async paymentConfirm(paymentConfirmDto) {
-        const expectedPaymentKey = process.env.PAYMENT_CONF_KEY;
+        const expectedPaymentKey = this.configService.get('PAYMENT_CONF_KEY');
         if (!expectedPaymentKey) {
             this.logger.error('PAYMENT_CONF_KEY is not set in environment variables.');
             throw new common_1.InternalServerErrorException('Payment confirmation system configuration error.');
         }
         if (paymentConfirmDto.signedPaymentKey !== expectedPaymentKey) {
-            this.logger.warn(`Invalid signedPaymentKey received. Expected: ${expectedPaymentKey}, Received: ${paymentConfirmDto.signedPaymentKey}`);
+            this.logger.warn(`Invalid signedPaymentKey received. Expected key (length): ${expectedPaymentKey.length}, Received key (length): ${paymentConfirmDto.signedPaymentKey.length}`);
             throw new common_1.UnauthorizedException('Invalid payment confirmation key.');
         }
         try {
@@ -202,6 +218,7 @@ let SessionService = SessionService_1 = class SessionService {
 exports.SessionService = SessionService;
 exports.SessionService = SessionService = SessionService_1 = __decorate([
     (0, common_1.Injectable)(),
-    __metadata("design:paramtypes", [prisma_service_1.PrismaService])
+    __metadata("design:paramtypes", [prisma_service_1.PrismaService,
+        config_1.ConfigService])
 ], SessionService);
 //# sourceMappingURL=session.service.js.map
