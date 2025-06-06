@@ -24,6 +24,9 @@ let SessionController = class SessionController {
     async createSession(createSessionDto) {
         return this.sessionService.createSession(createSessionDto);
     }
+    async sessionStatus(sessionStatusDto) {
+        return this.sessionService.checkSessionStatus(sessionStatusDto);
+    }
     async paymentConfirm(paymentConfirmDto) {
         return this.sessionService.paymentConfirm(paymentConfirmDto);
     }
@@ -37,6 +40,14 @@ __decorate([
     __metadata("design:paramtypes", [dto_1.CreateSessionDto]),
     __metadata("design:returntype", Promise)
 ], SessionController.prototype, "createSession", null);
+__decorate([
+    (0, common_1.Post)('sessionstatus'),
+    (0, common_1.HttpCode)(common_1.HttpStatus.OK),
+    __param(0, (0, common_1.Body)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [dto_1.SessionStatusDto]),
+    __metadata("design:returntype", Promise)
+], SessionController.prototype, "sessionStatus", null);
 __decorate([
     (0, common_1.Post)('paymentconfirm'),
     (0, common_1.HttpCode)(common_1.HttpStatus.OK),

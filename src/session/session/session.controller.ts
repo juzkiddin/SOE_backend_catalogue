@@ -1,6 +1,6 @@
 import { Controller, Post, Body, HttpCode, HttpStatus } from '@nestjs/common';
 import { SessionService } from './session.service';
-import { CreateSessionDto, PaymentConfirmDto } from '../dto';
+import { CreateSessionDto, PaymentConfirmDto, SessionStatusDto } from '../dto';
 import { PaymentStatus, Session } from '../../../generated/prisma'; // Adjusted path relative to src/session/session/
 
 @Controller('session')
@@ -13,6 +13,14 @@ export class SessionController {
         @Body() createSessionDto: CreateSessionDto,
     ): Promise<Pick<Session, 'sessionId' | 'billId' | 'paymentStatus'> | { sessionStatus: string }> {
         return this.sessionService.createSession(createSessionDto);
+    }
+
+    @Post('sessionstatus')
+    @HttpCode(HttpStatus.OK)
+    async sessionStatus(
+        @Body() sessionStatusDto: SessionStatusDto,
+    ): Promise<{ sessionStatus: string }> {
+        return this.sessionService.checkSessionStatus(sessionStatusDto);
     }
 
     @Post('paymentconfirm')

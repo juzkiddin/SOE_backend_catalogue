@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException, BadRequestException, Logger, InternalServerErrorException, UnauthorizedException } from '@nestjs/common';
 import { PrismaService } from '../../prisma.service';
-import { CreateSessionDto, PaymentConfirmDto } from '../dto';
+import { CreateSessionDto, PaymentConfirmDto, SessionStatusDto } from '../dto';
 import { PaymentStatus, Session } from '../../../generated/prisma';
 import { ConfigService } from '@nestjs/config';
 
@@ -173,6 +173,53 @@ export class SessionService {
         }
         this.logger.error('Exhausted createSession retries without returning or throwing specific error.');
         throw new InternalServerErrorException('Could not create session after multiple attempts.');
+    }
+
+    async checkSessionStatus(sessionStatusDto: SessionStatusDto): Promise<{ sessionStatus: string }> {
+        this.logger.log(`Checking status for session: ${sessionStatusDto.sessionId}`);
+
+        const session = await this.prisma.session.findUnique({
+            where: { sessionId: sessionStatusDto.sessionId },
+        });
+
+        if (!session) {
+            this.logger.warn(`Session status check failed: Session ${sessionStatusDto.sessionId} not found.`);
+            throw new NotFoundException(`Session with ID ${sessionStatusDto.sessionId} not found.`);
+        }
+
+        // Sanity check to ensure the request context matches the session owner.
+        if (session.restaurantId !== sessionStatusDto.restaurantId || session.tableId !== sessionStatusDto.tableId) {
+            this.logger.warn(`Session ${session.sessionId} found, but restaurant/table ID did not match request.`);
+            throw new BadRequestException('Session details do not match the provided restaurant or table.');
+        }
+
+        // If the session is already in a terminal state, just return its status.
+        if (session.sessionStatus === 'Expired' || session.sessionStatus === 'Completed') {
+            this.logger.log(`Session ${session.sessionId} is already in a terminal state: ${session.sessionStatus}`);
+            return { sessionStatus: session.sessionStatus };
+        }
+
+        const sessionExpiryHoursVal = this.sessionExpiryHours;
+        const sessionAgeHours = (Date.now() - new Date(session.sessionStart).getTime()) / (1000 * 60 * 60);
+        this.logger.log(`Session ${session.sessionId} age: ${sessionAgeHours.toFixed(2)} hours (limit: ${sessionExpiryHoursVal}h).`);
+
+        if (sessionAgeHours > sessionExpiryHoursVal || sessionAgeHours < 0) {
+            // Expired due to age or future date
+            this.logger.log(`Session ${session.sessionId} is now considered expired. Updating status in DB.`);
+            const updatedSession = await this.prisma.session.update({
+                where: { sessionId: session.sessionId },
+                data: {
+                    sessionStatus: 'Expired',
+                    paymentStatus: PaymentStatus.NotCompleted,
+                    sessionEnd: new Date(),
+                },
+            });
+            return { sessionStatus: updatedSession.sessionStatus }; // Will be "Expired"
+        }
+
+        // If we reach here, the session is not yet expired. Return its current status.
+        this.logger.log(`Session ${session.sessionId} is still active.`);
+        return { sessionStatus: session.sessionStatus }; // e.g., "Active"
     }
 
     async paymentConfirm(paymentConfirmDto: PaymentConfirmDto): Promise<{ sessionId: string; billId: string; paymentStatus: PaymentStatus }> {

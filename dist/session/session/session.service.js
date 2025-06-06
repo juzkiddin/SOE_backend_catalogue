@@ -163,6 +163,41 @@ let SessionService = SessionService_1 = class SessionService {
         this.logger.error('Exhausted createSession retries without returning or throwing specific error.');
         throw new common_1.InternalServerErrorException('Could not create session after multiple attempts.');
     }
+    async checkSessionStatus(sessionStatusDto) {
+        this.logger.log(`Checking status for session: ${sessionStatusDto.sessionId}`);
+        const session = await this.prisma.session.findUnique({
+            where: { sessionId: sessionStatusDto.sessionId },
+        });
+        if (!session) {
+            this.logger.warn(`Session status check failed: Session ${sessionStatusDto.sessionId} not found.`);
+            throw new common_1.NotFoundException(`Session with ID ${sessionStatusDto.sessionId} not found.`);
+        }
+        if (session.restaurantId !== sessionStatusDto.restaurantId || session.tableId !== sessionStatusDto.tableId) {
+            this.logger.warn(`Session ${session.sessionId} found, but restaurant/table ID did not match request.`);
+            throw new common_1.BadRequestException('Session details do not match the provided restaurant or table.');
+        }
+        if (session.sessionStatus === 'Expired' || session.sessionStatus === 'Completed') {
+            this.logger.log(`Session ${session.sessionId} is already in a terminal state: ${session.sessionStatus}`);
+            return { sessionStatus: session.sessionStatus };
+        }
+        const sessionExpiryHoursVal = this.sessionExpiryHours;
+        const sessionAgeHours = (Date.now() - new Date(session.sessionStart).getTime()) / (1000 * 60 * 60);
+        this.logger.log(`Session ${session.sessionId} age: ${sessionAgeHours.toFixed(2)} hours (limit: ${sessionExpiryHoursVal}h).`);
+        if (sessionAgeHours > sessionExpiryHoursVal || sessionAgeHours < 0) {
+            this.logger.log(`Session ${session.sessionId} is now considered expired. Updating status in DB.`);
+            const updatedSession = await this.prisma.session.update({
+                where: { sessionId: session.sessionId },
+                data: {
+                    sessionStatus: 'Expired',
+                    paymentStatus: prisma_1.PaymentStatus.NotCompleted,
+                    sessionEnd: new Date(),
+                },
+            });
+            return { sessionStatus: updatedSession.sessionStatus };
+        }
+        this.logger.log(`Session ${session.sessionId} is still active.`);
+        return { sessionStatus: session.sessionStatus };
+    }
     async paymentConfirm(paymentConfirmDto) {
         const expectedPaymentKey = this.configService.get('PAYMENT_CONF_KEY');
         if (!expectedPaymentKey) {
