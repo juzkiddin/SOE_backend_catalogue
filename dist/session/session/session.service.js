@@ -178,7 +178,7 @@ let SessionService = SessionService_1 = class SessionService {
         }
         if (session.sessionStatus === 'Expired' || session.sessionStatus === 'Completed') {
             this.logger.log(`Session ${session.sessionId} is already in a terminal state: ${session.sessionStatus}`);
-            return { sessionStatus: session.sessionStatus };
+            return { sessionStatus: session.sessionStatus, paymentStatus: session.paymentStatus };
         }
         const sessionExpiryHoursVal = this.sessionExpiryHours;
         const sessionAgeHours = (Date.now() - new Date(session.sessionStart).getTime()) / (1000 * 60 * 60);
@@ -193,10 +193,10 @@ let SessionService = SessionService_1 = class SessionService {
                     sessionEnd: new Date(),
                 },
             });
-            return { sessionStatus: updatedSession.sessionStatus };
+            return { sessionStatus: updatedSession.sessionStatus, paymentStatus: updatedSession.paymentStatus };
         }
         this.logger.log(`Session ${session.sessionId} is still active.`);
-        return { sessionStatus: session.sessionStatus };
+        return { sessionStatus: session.sessionStatus, paymentStatus: session.paymentStatus };
     }
     async paymentConfirm(paymentConfirmDto) {
         const expectedPaymentKey = this.configService.get('PAYMENT_CONF_KEY');

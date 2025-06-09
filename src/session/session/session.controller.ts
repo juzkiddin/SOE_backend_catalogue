@@ -17,9 +17,9 @@ export class SessionController {
 
     @Post('sessionstatus')
     @HttpCode(HttpStatus.OK)
-    async sessionStatus(
+    sessionStatus(
         @Body() sessionStatusDto: SessionStatusDto,
-    ): Promise<{ sessionStatus: string }> {
+    ): Promise<{ sessionStatus: string; paymentStatus: PaymentStatus }> {
         return this.sessionService.checkSessionStatus(sessionStatusDto);
     }
 

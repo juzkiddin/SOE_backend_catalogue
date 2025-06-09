@@ -16,6 +16,7 @@ export declare class SessionService {
     }>;
     checkSessionStatus(sessionStatusDto: SessionStatusDto): Promise<{
         sessionStatus: string;
+        paymentStatus: PaymentStatus;
     }>;
     paymentConfirm(paymentConfirmDto: PaymentConfirmDto): Promise<{
         sessionId: string;

@@ -175,7 +175,7 @@ export class SessionService {
         throw new InternalServerErrorException('Could not create session after multiple attempts.');
     }
 
-    async checkSessionStatus(sessionStatusDto: SessionStatusDto): Promise<{ sessionStatus: string }> {
+    async checkSessionStatus(sessionStatusDto: SessionStatusDto): Promise<{ sessionStatus: string; paymentStatus: PaymentStatus }> {
         this.logger.log(`Checking status for session: ${sessionStatusDto.sessionId}`);
 
         const session = await this.prisma.session.findUnique({
@@ -196,7 +196,7 @@ export class SessionService {
         // If the session is already in a terminal state, just return its status.
         if (session.sessionStatus === 'Expired' || session.sessionStatus === 'Completed') {
             this.logger.log(`Session ${session.sessionId} is already in a terminal state: ${session.sessionStatus}`);
-            return { sessionStatus: session.sessionStatus };
+            return { sessionStatus: session.sessionStatus, paymentStatus: session.paymentStatus };
         }
 
         const sessionExpiryHoursVal = this.sessionExpiryHours;
@@ -214,12 +214,12 @@ export class SessionService {
                     sessionEnd: new Date(),
                 },
             });
-            return { sessionStatus: updatedSession.sessionStatus }; // Will be "Expired"
+            return { sessionStatus: updatedSession.sessionStatus, paymentStatus: updatedSession.paymentStatus };
         }
 
         // If we reach here, the session is not yet expired. Return its current status.
         this.logger.log(`Session ${session.sessionId} is still active.`);
-        return { sessionStatus: session.sessionStatus }; // e.g., "Active"
+        return { sessionStatus: session.sessionStatus, paymentStatus: session.paymentStatus };
     }
 
     async paymentConfirm(paymentConfirmDto: PaymentConfirmDto): Promise<{ sessionId: string; billId: string; paymentStatus: PaymentStatus }> {

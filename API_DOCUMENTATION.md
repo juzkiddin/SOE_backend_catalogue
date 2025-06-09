@@ -24,21 +24,27 @@ This endpoint is used to check the status of a specific session. If the session 
 
 Returns the current (or newly updated) status of the session.
 
+*Example (Session is Active):*
 ```json
 {
-  "sessionStatus": "Active" 
+  "sessionStatus": "Active",
+  "paymentStatus": "Pending"
 }
 ```
-*or*
+
+*Example (Session was just expired by this call):*
 ```json
 {
-  "sessionStatus": "Expired"
+  "sessionStatus": "Expired",
+  "paymentStatus": "NotCompleted"
 }
 ```
-*or*
+
+*Example (Session was already in a terminal state):*
 ```json
 {
-  "sessionStatus": "Completed"
+  "sessionStatus": "Completed",
+  "paymentStatus": "Confirmed"
 }
 ```
 

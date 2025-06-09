@@ -24,7 +24,7 @@ let SessionController = class SessionController {
     async createSession(createSessionDto) {
         return this.sessionService.createSession(createSessionDto);
     }
-    async sessionStatus(sessionStatusDto) {
+    sessionStatus(sessionStatusDto) {
         return this.sessionService.checkSessionStatus(sessionStatusDto);
     }
     async paymentConfirm(paymentConfirmDto) {

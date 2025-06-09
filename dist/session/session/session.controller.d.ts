@@ -9,6 +9,7 @@ export declare class SessionController {
     }>;
     sessionStatus(sessionStatusDto: SessionStatusDto): Promise<{
         sessionStatus: string;
+        paymentStatus: PaymentStatus;
     }>;
     paymentConfirm(paymentConfirmDto: PaymentConfirmDto): Promise<{
         sessionId: string;
